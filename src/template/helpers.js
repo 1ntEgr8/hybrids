@@ -1,21 +1,72 @@
-const setCache = new Map();
-export function set(propertyName, value) {
-  if (!propertyName)
-    throw Error(`Target property name missing: ${propertyName}`);
+import { storePointer } from "../utils.js";
+
+function resolveValue({ target }, setter) {
+  let value;
+  const name = target.name || target.getAttribute("name") || target.id;
+
+  switch (target.type) {
+    case "radio":
+      if (!target.checked) return;
+    // eslint-disable-next-line no-fallthrough
+    case "checkbox":
+      value = target.checked && target.value;
+      break;
+    default:
+      value = target.value;
+  }
+
+  setter(name, value);
+}
+
+const stringCache = new Map();
+const storeCache = new WeakMap();
+
+export function set(property, value) {
+  if (!property) {
+    throw Error(`Target property must be set: ${property}`);
+  }
 
   if (arguments.length === 2) {
     return host => {
-      host[propertyName] = value;
+      host[property] = value;
     };
   }
 
-  let fn = setCache.get(propertyName);
+  if (typeof property === "object") {
+    const store = storePointer.get(property);
+
+    if (!store) {
+      throw Error("Provided object must be a model instance of the store");
+    }
+
+    let fn = storeCache.get(property);
+
+    if (!fn) {
+      fn = (host, event) => {
+        resolveValue(event, (name, nextValue) => {
+          if (!name) {
+            throw Error("'name' or 'id' property must be defined");
+          }
+
+          store.set(property, { [name]: nextValue });
+        });
+      };
+      storeCache.set(property, fn);
+    }
+
+    return fn;
+  }
+
+  let fn = stringCache.get(property);
 
   if (!fn) {
-    fn = (host, { target }) => {
-      host[propertyName] = target.value;
+    fn = (host, event) => {
+      resolveValue(event, (name, nextValue) => {
+        host[property] = nextValue;
+      });
     };
-    setCache.set(propertyName, fn);
+
+    stringCache.set(property, fn);
   }
 
   return fn;
